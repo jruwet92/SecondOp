@@ -1,0 +1,1316 @@
+import React, { useState, useRef, useEffect } from 'react';
+
+export default function SecondOpinionLanding() {
+  const [currentStep, setCurrentStep] = useState('landing');
+  const [isRecording, setIsRecording] = useState(false);
+  const [audioLevel, setAudioLevel] = useState(0);
+  const [scrollY, setScrollY] = useState(0);
+  const [carouselIndex, setCarouselIndex] = useState(0);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitSuccess, setSubmitSuccess] = useState(false);
+  const [formData, setFormData] = useState({
+    name: '',
+    phone: '',
+    email: ''
+  });
+
+  const mediaRecorderRef = useRef(null);
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animationFrameRef = useRef(null);
+
+  const steps = ['description', 'name', 'phone', 'email', 'confirmation'];
+  const currentStepIndex = steps.indexOf(currentStep);
+
+  useEffect(() => {
+    const handleScroll = () => setScrollY(window.scrollY);
+    window.addEventListener('scroll', handleScroll);
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (audioContextRef.current) audioContextRef.current.close();
+    };
+  }, []);
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      mediaRecorderRef.current = new MediaRecorder(stream);
+      
+      audioContextRef.current = new AudioContext();
+      const source = audioContextRef.current.createMediaStreamSource(stream);
+      analyserRef.current = audioContextRef.current.createAnalyser();
+      analyserRef.current.fftSize = 256;
+      source.connect(analyserRef.current);
+
+      const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
+
+      const updateLevel = () => {
+        analyserRef.current.getByteFrequencyData(dataArray);
+        const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
+        setAudioLevel(Math.min(100, (average / 128) * 100));
+        animationFrameRef.current = requestAnimationFrame(updateLevel);
+      };
+
+      updateLevel();
+
+      let chunks = [];
+      mediaRecorderRef.current.ondataavailable = (e) => chunks.push(e.data);
+      mediaRecorderRef.current.onstop = () => {
+        const blob = new Blob(chunks, { type: 'audio/webm' });
+        console.log('Recording completed', blob);
+      };
+
+      mediaRecorderRef.current.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('Error accessing microphone:', err);
+      alert('Impossible d\'accéder au microphone. Veuillez vérifier vos paramètres.');
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      mediaRecorderRef.current.stream.getTracks().forEach(track => track.stop());
+      setIsRecording(false);
+      setAudioLevel(0);
+      if (animationFrameRef.current) cancelAnimationFrame(animationFrameRef.current);
+      if (audioContextRef.current) audioContextRef.current.close();
+    }
+  };
+
+  const handleNext = () => {
+    const currentIndex = steps.indexOf(currentStep);
+    if (currentIndex < steps.length - 1) {
+      setCurrentStep(steps[currentIndex + 1]);
+    }
+  };
+
+  const handleSubmit = async () => {
+    setIsSubmitting(true);
+    try {
+      const response = await fetch('https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: formData.name,
+          phone: formData.phone,
+          email: formData.email,
+          description: formData.description,
+          hasVoiceRecording: isRecording === false && audioLevel === 0,
+          submittedAt: new Date().toISOString()
+        })
+      });
+      if (!response.ok) throw new Error(`Webhook responded ${response.status}`);
+      setSubmitSuccess(true);
+    } catch (err) {
+      console.error('Webhook error:', err);
+      alert('Une erreur est survenue lors de l\'envoi. Merci de réessayer.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const canProceed = () => {
+    switch (currentStep) {
+      case 'description': return formData.description.trim().length > 10;
+      case 'name': return formData.name.trim().length > 0;
+      case 'phone': return formData.phone.trim().length > 0;
+      case 'email': return formData.email.includes('@');
+      default: return true;
+    }
+  };
+
+  if (currentStep === 'landing') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#000',
+        color: '#f5f5f7',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", "Helvetica Neue", sans-serif',
+        overflow: 'hidden'
+      }}>
+        <style>{`
+          @keyframes fadeInUp {
+            from {
+              opacity: 0;
+              transform: translateY(30px);
+            }
+            to {
+              opacity: 1;
+              transform: translateY(0);
+            }
+          }
+          
+          @keyframes float {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-20px); }
+          }
+          
+          @keyframes pulse {
+            0%, 100% { opacity: 0.4; }
+            50% { opacity: 0.8; }
+          }
+
+          .fade-in-up {
+            animation: fadeInUp 1s ease-out forwards;
+          }
+
+          .delay-1 { animation-delay: 0.2s; opacity: 0; }
+          .delay-2 { animation-delay: 0.4s; opacity: 0; }
+          .delay-3 { animation-delay: 0.6s; opacity: 0; }
+          .delay-4 { animation-delay: 0.8s; opacity: 0; }
+
+          .cta-button {
+            background: #f5f5f7;
+            color: #000;
+            border: none;
+            padding: 16px 48px;
+            font-size: 17px;
+            font-weight: 500;
+            border-radius: 980px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            letter-spacing: -0.01em;
+          }
+
+          .cta-button:hover {
+            background: #fff;
+            transform: scale(1.02);
+            box-shadow: 0 8px 30px rgba(245, 245, 247, 0.3);
+          }
+
+          .carousel-track {
+            display: flex;
+            transition: transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+
+          .carousel-card {
+            min-width: 100%;
+            padding: 0 24px;
+            box-sizing: border-box;
+          }
+
+          .carousel-card-inner {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 28px;
+            padding: 64px 56px;
+            backdrop-filter: blur(12px);
+            max-width: 680px;
+            margin: 0 auto;
+            position: relative;
+            transition: border-color 0.4s ease, background 0.4s ease;
+          }
+
+          .carousel-card-inner:hover {
+            border-color: rgba(255, 255, 255, 0.18);
+            background: rgba(255, 255, 255, 0.06);
+          }
+
+          .carousel-arrow {
+            width: 52px;
+            height: 52px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            color: #fff;
+            font-size: 20px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            backdrop-filter: blur(10px);
+          }
+
+          .carousel-arrow:hover {
+            background: rgba(255, 255, 255, 0.16);
+            border-color: rgba(255, 255, 255, 0.3);
+            transform: scale(1.08);
+          }
+
+          .carousel-arrow:disabled {
+            opacity: 0.2;
+            cursor: default;
+            transform: none;
+          }
+
+          .carousel-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            padding: 0;
+          }
+
+          .carousel-dot.active {
+            background: #fff;
+            width: 24px;
+            border-radius: 4px;
+          }
+
+          .nav-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            z-index: 1000;
+            padding: 20px 48px;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+          }
+
+          .nav-scrolled {
+            background: rgba(0, 0, 0, 0.8);
+            backdrop-filter: blur(20px) saturate(180%);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+          }
+
+          .floating-orb {
+            position: absolute;
+            border-radius: 50%;
+            filter: blur(80px);
+            animation: float 20s ease-in-out infinite;
+          }
+
+        `}</style>
+
+        {/* Floating Orbs Background */}
+        <div className="floating-orb" style={{
+          top: '10%',
+          left: '10%',
+          width: '500px',
+          height: '500px',
+          background: 'radial-gradient(circle, rgba(0,122,255,0.2), transparent)',
+          animationDelay: '0s'
+        }} />
+        <div className="floating-orb" style={{
+          top: '50%',
+          right: '10%',
+          width: '600px',
+          height: '600px',
+          background: 'radial-gradient(circle, rgba(52,199,89,0.15), transparent)',
+          animationDelay: '5s'
+        }} />
+
+        {/* Navigation */}
+        <nav className={`nav-bar ${scrollY > 50 ? 'nav-scrolled' : ''}`}>
+          <div style={{
+            maxWidth: '1200px',
+            margin: '0 auto',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+          }}>
+            <div style={{ fontSize: '22px', fontWeight: '600', letterSpacing: '-0.02em' }}>
+              Second Avis
+            </div>
+          </div>
+        </nav>
+
+        {/* Hero Section */}
+        <section style={{
+          minHeight: '100vh',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          textAlign: 'center',
+          padding: '0 24px',
+          position: 'relative'
+        }}>
+          <div style={{ maxWidth: '980px', position: 'relative', zIndex: 10 }}>
+            <h1 className="fade-in-up" style={{
+              fontSize: 'clamp(48px, 8vw, 96px)',
+              fontWeight: '700',
+              lineHeight: '1.05',
+              letterSpacing: '-0.03em',
+              marginBottom: '24px',
+              background: 'linear-gradient(180deg, #fff 0%, rgba(255,255,255,0.6) 100%)',
+              WebkitBackgroundClip: 'text',
+              WebkitTextFillColor: 'transparent',
+              backgroundClip: 'text'
+            }}>
+              Un second avis<br />qui change tout
+            </h1>
+            
+            <p className="fade-in-up delay-1" style={{
+              fontSize: '28px',
+              lineHeight: '1.4',
+              color: 'rgba(255, 255, 255, 0.6)',
+              marginBottom: '48px',
+              fontWeight: '400',
+              letterSpacing: '-0.01em'
+            }}>
+              Prenez les décisions de santé les plus éclairées.<br />Avec l'avis d'experts reconnus.
+            </p>
+
+            <button 
+              className="cta-button fade-in-up delay-2"
+              onClick={() => setCurrentStep('description')}
+            >
+              Commencer gratuitement
+            </button>
+
+            <p className="fade-in-up delay-3" style={{
+              marginTop: '24px',
+              fontSize: '15px',
+              color: 'rgba(255, 255, 255, 0.4)',
+              fontWeight: '400'
+            }}>
+              Premier contact offert • Sans engagement
+            </p>
+          </div>
+        </section>
+
+        {/* How It Works — Carousel */}
+        <section style={{
+          padding: '160px 0',
+          position: 'relative',
+          zIndex: 10,
+          overflow: 'hidden'
+        }}>
+          {/* Title block */}
+          <div style={{ textAlign: 'center', marginBottom: '72px', padding: '0 24px' }}>
+            <h2 style={{
+              fontSize: '64px',
+              fontWeight: '700',
+              letterSpacing: '-0.025em',
+              lineHeight: '1.1',
+              marginBottom: '20px'
+            }}>
+              Simple. Rapide.<br />Confidentiel.
+            </h2>
+            <p style={{
+              fontSize: '19px',
+              color: 'rgba(255, 255, 255, 0.45)',
+              fontWeight: '400',
+              letterSpacing: '-0.01em'
+            }}>
+              Comment ça marche ?
+            </p>
+          </div>
+
+          {/* Carousel viewport */}
+          <div style={{ overflow: 'hidden', width: '100%' }}>
+            <div
+              className="carousel-track"
+              style={{ transform: `translateX(-${carouselIndex * 100}%)` }}
+            >
+              {[
+                {
+                  step: '01',
+                  title: 'Partagez',
+                  desc: 'Décrivez brièvement votre situation médicale en quelques mots, ou enregistrez un message vocal. C\'est tout ce qu\'on vous demande pour commencer.',
+                  icon: '💬'
+                },
+                {
+                  step: '02',
+                  title: 'Accompagnement',
+                  desc: 'Notre assistante médicale vous contacte pour faire le point sur votre cas, rassembler les pièces de votre dossier médical et préparer l\'analyse.',
+                  icon: '🩺'
+                },
+                {
+                  step: '03',
+                  title: 'Expertise',
+                  desc: 'Un médecin expert analyse votre dossier et vous fournit un rapport détaillé, vulgarisé, avec des recommandations personnalisées et un réseau de spécialistes.',
+                  icon: '📄'
+                }
+              ].map((card, i) => (
+                <div key={i} className="carousel-card">
+                  <div className="carousel-card-inner">
+                    {/* Step badge */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '16px',
+                      marginBottom: '36px'
+                    }}>
+                      <span style={{
+                        fontSize: '13px',
+                        fontWeight: '600',
+                        color: 'rgba(255, 255, 255, 0.35)',
+                        letterSpacing: '0.12em',
+                        textTransform: 'uppercase'
+                      }}>
+                        Étape {card.step}
+                      </span>
+                      <div style={{
+                        flex: 1,
+                        height: '1px',
+                        background: 'rgba(255, 255, 255, 0.1)'
+                      }} />
+                    </div>
+
+                    {/* Icon + Title row */}
+                    <div style={{
+                      display: 'flex',
+                      alignItems: 'baseline',
+                      gap: '20px',
+                      marginBottom: '24px'
+                    }}>
+                      <span style={{ fontSize: '40px' }}>{card.icon}</span>
+                      <h3 style={{
+                        fontSize: '42px',
+                        fontWeight: '700',
+                        letterSpacing: '-0.025em',
+                        lineHeight: '1'
+                      }}>
+                        {card.title}
+                      </h3>
+                    </div>
+
+                    {/* Description */}
+                    <p style={{
+                      fontSize: '19px',
+                      lineHeight: '1.6',
+                      color: 'rgba(255, 255, 255, 0.55)',
+                      fontWeight: '400',
+                      maxWidth: '480px'
+                    }}>
+                      {card.desc}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Controls row: arrows + dots */}
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            gap: '28px',
+            marginTop: '56px'
+          }}>
+            {/* Left arrow */}
+            <button
+              className="carousel-arrow"
+              disabled={carouselIndex === 0}
+              onClick={() => setCarouselIndex(prev => Math.max(0, prev - 1))}
+            >
+              ←
+            </button>
+
+            {/* Dots */}
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
+              {[0, 1, 2].map(i => (
+                <button
+                  key={i}
+                  className={`carousel-dot ${carouselIndex === i ? 'active' : ''}`}
+                  onClick={() => setCarouselIndex(i)}
+                />
+              ))}
+            </div>
+
+            {/* Right arrow */}
+            <button
+              className="carousel-arrow"
+              disabled={carouselIndex === 2}
+              onClick={() => setCarouselIndex(prev => Math.min(2, prev + 1))}
+            >
+              →
+            </button>
+          </div>
+        </section>
+
+        {/* Trust Section */}
+        <section style={{
+          padding: '160px 24px',
+          background: 'rgba(255, 255, 255, 0.02)',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+          position: 'relative',
+          zIndex: 10
+        }}>
+          <div style={{ maxWidth: '800px', margin: '0 auto', textAlign: 'center' }}>
+            <h2 style={{
+              fontSize: '48px',
+              fontWeight: '700',
+              marginBottom: '48px',
+              letterSpacing: '-0.025em'
+            }}>
+              Votre confiance,<br />notre priorité
+            </h2>
+
+            <div style={{
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+              gap: '48px',
+              marginTop: '64px'
+            }}>
+              <div>
+                <div style={{
+                  fontSize: '48px',
+                  marginBottom: '16px'
+                }}>🔒</div>
+                <h3 style={{
+                  fontSize: '21px',
+                  fontWeight: '600',
+                  marginBottom: '8px',
+                  letterSpacing: '-0.01em'
+                }}>
+                  Confidentialité
+                </h3>
+                <p style={{
+                  fontSize: '17px',
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  lineHeight: '1.4'
+                }}>
+                  Données anonymisées et cryptées
+                </p>
+              </div>
+
+              <div>
+                <div style={{
+                  fontSize: '48px',
+                  marginBottom: '16px'
+                }}>⚕️</div>
+                <h3 style={{
+                  fontSize: '21px',
+                  fontWeight: '600',
+                  marginBottom: '8px',
+                  letterSpacing: '-0.01em'
+                }}>
+                  Experts
+                </h3>
+                <p style={{
+                  fontSize: '17px',
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  lineHeight: '1.4'
+                }}>
+                  Médecins spécialistes reconnus
+                </p>
+              </div>
+
+              <div>
+                <div style={{
+                  fontSize: '48px',
+                  marginBottom: '16px'
+                }}>✓</div>
+                <h3 style={{
+                  fontSize: '21px',
+                  fontWeight: '600',
+                  marginBottom: '8px',
+                  letterSpacing: '-0.01em'
+                }}>
+                  Gratuit
+                </h3>
+                <p style={{
+                  fontSize: '17px',
+                  color: 'rgba(255, 255, 255, 0.6)',
+                  lineHeight: '1.4'
+                }}>
+                  Premier contact sans frais
+                </p>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* Final CTA */}
+        <section style={{
+          padding: '160px 24px',
+          textAlign: 'center',
+          position: 'relative',
+          zIndex: 10
+        }}>
+          <h2 style={{
+            fontSize: '56px',
+            fontWeight: '700',
+            marginBottom: '32px',
+            letterSpacing: '-0.025em',
+            lineHeight: '1.1'
+          }}>
+            Prêt à commencer ?
+          </h2>
+          <p style={{
+            fontSize: '24px',
+            color: 'rgba(255, 255, 255, 0.6)',
+            marginBottom: '48px',
+            fontWeight: '400'
+          }}>
+            Obtenez votre second avis médical dès aujourd'hui.
+          </p>
+          <button 
+            className="cta-button"
+            onClick={() => setCurrentStep('description')}
+          >
+            Demander mon second avis
+          </button>
+        </section>
+
+        {/* Footer */}
+        <footer style={{
+          padding: '48px 24px',
+          borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+          textAlign: 'center',
+          position: 'relative',
+          zIndex: 10
+        }}>
+          <p style={{
+            fontSize: '14px',
+            color: 'rgba(255, 255, 255, 0.4)'
+          }}>
+            © 2026 Second Avis Médical. Toutes les informations sont traitées de manière confidentielle.
+          </p>
+        </footer>
+      </div>
+    );
+  }
+
+  // Form Steps with Apple-like design
+  // ── Success screen ──────────────────────────────────────────
+  if (submitSuccess) {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#000',
+        color: '#f5f5f7',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
+      }}>
+        <style>{`
+          @keyframes checkScale {
+            0% { transform: scale(0); opacity: 0; }
+            60% { transform: scale(1.15); }
+            100% { transform: scale(1); opacity: 1; }
+          }
+          @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+          }
+          .success-check { animation: checkScale 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards; }
+          .success-title { animation: fadeUp 0.5s ease 0.35s both; }
+          .success-sub { animation: fadeUp 0.5s ease 0.5s both; }
+          .success-pills { animation: fadeUp 0.5s ease 0.65s both; }
+        `}</style>
+
+        <div style={{ maxWidth: '520px', width: '100%', textAlign: 'center' }}>
+          {/* Animated checkmark */}
+          <div className="success-check" style={{
+            width: '100px',
+            height: '100px',
+            borderRadius: '50%',
+            background: 'linear-gradient(135deg, rgba(52,199,89,0.2), rgba(52,199,89,0.08))',
+            border: '2px solid rgba(52,199,89,0.35)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            margin: '0 auto 48px',
+            fontSize: '44px'
+          }}>
+            ✓
+          </div>
+
+          <h2 className="success-title" style={{
+            fontSize: '48px',
+            fontWeight: '700',
+            letterSpacing: '-0.025em',
+            lineHeight: '1.1',
+            marginBottom: '20px'
+          }}>
+            Merci.
+          </h2>
+
+          <p className="success-sub" style={{
+            fontSize: '19px',
+            color: 'rgba(255, 255, 255, 0.55)',
+            lineHeight: '1.6',
+            marginBottom: '48px'
+          }}>
+            Votre demande a bien été reçue. Notre assistante médicale vous contactera prochainement pour un premier entretien gratuit.
+          </p>
+
+          {/* Reassurance pills */}
+          <div className="success-pills" style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: '12px',
+            flexWrap: 'wrap'
+          }}>
+            {['100% gratuit', 'Confidentiel', 'Professionnels de santé'].map((label, i) => (
+              <span key={i} style={{
+                padding: '10px 20px',
+                background: 'rgba(255, 255, 255, 0.06)',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '980px',
+                fontSize: '15px',
+                color: 'rgba(255, 255, 255, 0.6)'
+              }}>
+                {label}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (currentStep === 'confirmation') {
+    return (
+      <div style={{
+        minHeight: '100vh',
+        background: '#000',
+        color: '#f5f5f7',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: '24px',
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
+      }}>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+        <div style={{
+          width: '100%',
+          background: 'rgba(255, 255, 255, 0.05)',
+          backdropFilter: 'blur(20px)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          borderRadius: '24px',
+          padding: '64px 48px',
+          animation: 'fadeInUp 0.6s ease-out'
+        }}>
+          <div style={{
+            textAlign: 'center',
+            marginBottom: '48px'
+          }}>
+            <div style={{
+              width: '80px',
+              height: '80px',
+              borderRadius: '50%',
+              background: 'rgba(52, 199, 89, 0.15)',
+              border: '2px solid rgba(52, 199, 89, 0.3)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              margin: '0 auto 24px',
+              fontSize: '40px'
+            }}>✓</div>
+            <h2 style={{
+              fontSize: '40px',
+              fontWeight: '700',
+              marginBottom: '12px',
+              letterSpacing: '-0.02em'
+            }}>
+              Vérification
+            </h2>
+            <p style={{
+              fontSize: '19px',
+              color: 'rgba(255, 255, 255, 0.6)'
+            }}>
+              Confirmez vos informations avant l'envoi
+            </p>
+          </div>
+
+          <div style={{ marginBottom: '40px' }}>
+            {[
+              { label: 'Votre demande', value: formData.description },
+              { label: 'Nom', value: formData.name },
+              { label: 'Téléphone', value: formData.phone },
+              { label: 'Email', value: formData.email }
+            ].map((item, i) => (
+              <div key={i} style={{
+                padding: '24px 0',
+                borderBottom: i < 3 ? '1px solid rgba(255, 255, 255, 0.08)' : 'none'
+              }}>
+                <div style={{
+                  fontSize: '13px',
+                  color: 'rgba(255, 255, 255, 0.4)',
+                  marginBottom: '8px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.06em',
+                  fontWeight: '500'
+                }}>
+                  {item.label}
+                </div>
+                <div style={{
+                  fontSize: '17px',
+                  color: '#f5f5f7',
+                  lineHeight: '1.5'
+                }}>
+                  {item.value}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <div style={{
+            background: 'rgba(52, 199, 89, 0.1)',
+            border: '1px solid rgba(52, 199, 89, 0.2)',
+            borderRadius: '16px',
+            padding: '20px',
+            marginBottom: '32px',
+            fontSize: '15px',
+            color: 'rgba(255, 255, 255, 0.8)',
+            lineHeight: '1.6'
+          }}>
+            <div style={{ marginBottom: '8px' }}>✓ <strong>Gratuit</strong> — Premier contact sans frais</div>
+            <div style={{ marginBottom: '8px' }}>✓ <strong>Confidentiel</strong> — Données protégées</div>
+            <div>✓ <strong>Professionnel</strong> — Experts de santé uniquement</div>
+          </div>
+
+          <div style={{ display: 'flex', gap: '16px' }}>
+            <button
+              onClick={() => setCurrentStep('email')}
+              style={{
+                flex: 1,
+                padding: '16px',
+                background: 'rgba(255, 255, 255, 0.1)',
+                border: '1px solid rgba(255, 255, 255, 0.2)',
+                borderRadius: '12px',
+                color: '#f5f5f7',
+                fontSize: '17px',
+                fontWeight: '500',
+                cursor: 'pointer',
+                transition: 'all 0.2s'
+              }}
+              onMouseOver={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.15)'}
+              onMouseOut={(e) => e.target.style.background = 'rgba(255, 255, 255, 0.1)'}
+            >
+              Modifier
+            </button>
+            <button
+              onClick={handleSubmit}
+              disabled={isSubmitting}
+              style={{
+                flex: 1,
+                padding: '16px',
+                background: isSubmitting ? 'rgba(245,245,247,0.5)' : '#f5f5f7',
+                border: 'none',
+                borderRadius: '12px',
+                color: '#000',
+                fontSize: '17px',
+                fontWeight: '600',
+                cursor: isSubmitting ? 'default' : 'pointer',
+                transition: 'all 0.2s',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '10px'
+              }}
+              onMouseOver={(e) => { if (!isSubmitting) { e.currentTarget.style.background = '#fff'; e.currentTarget.style.transform = 'scale(1.02)'; }}}
+              onMouseOut={(e) => { if (!isSubmitting) { e.currentTarget.style.background = '#f5f5f7'; e.currentTarget.style.transform = 'scale(1)'; }}}
+            >
+              {isSubmitting && (
+                <span style={{
+                  width: '18px',
+                  height: '18px',
+                  border: '2px solid #000',
+                  borderTop: '2px solid transparent',
+                  borderRadius: '50%',
+                  animation: 'spin 0.6s linear infinite',
+                  display: 'inline-block'
+                }} />
+              )}
+              {isSubmitting ? 'Envoi…' : 'Envoyer ma demande'}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Form steps
+  return (
+    <div style={{
+      minHeight: '100vh',
+      background: '#000',
+      color: '#f5f5f7',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: '24px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif'
+    }}>
+      <style>{`
+        .input-field {
+          width: 100%;
+          padding: 20px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.15);
+          border-radius: 12px;
+          color: #f5f5f7;
+          font-size: 19px;
+          transition: all 0.3s;
+          font-family: inherit;
+        }
+
+        .input-field:focus {
+          outline: none;
+          background: rgba(255, 255, 255, 0.08);
+          border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .input-field::placeholder {
+          color: rgba(255, 255, 255, 0.3);
+        }
+
+        textarea.input-field {
+          resize: none;
+          min-height: 180px;
+        }
+
+        .mic-button {
+          width: 100%;
+          padding: 24px;
+          background: rgba(255, 255, 255, 0.05);
+          border: 2px solid rgba(255, 255, 255, 0.15);
+          border-radius: 16px;
+          color: #f5f5f7;
+          font-size: 17px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.3s;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 12px;
+        }
+
+        .mic-button:hover {
+          background: rgba(255, 255, 255, 0.08);
+          border-color: rgba(255, 255, 255, 0.25);
+        }
+
+        .mic-button.recording {
+          background: rgba(255, 59, 48, 0.15);
+          border-color: rgba(255, 59, 48, 0.4);
+        }
+
+        .continue-btn {
+          padding: 18px 40px;
+          background: #f5f5f7;
+          color: #000;
+          border: none;
+          border-radius: 980px;
+          font-size: 17px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: all 0.3s;
+          letter-spacing: -0.01em;
+        }
+
+        .continue-btn:hover:not(:disabled) {
+          background: #fff;
+          transform: scale(1.02);
+        }
+
+        .continue-btn:disabled {
+          opacity: 0.3;
+          cursor: not-allowed;
+        }
+
+        .back-btn {
+          padding: 18px 40px;
+          background: rgba(255, 255, 255, 0.1);
+          color: #f5f5f7;
+          border: 1px solid rgba(255, 255, 255, 0.2);
+          border-radius: 980px;
+          font-size: 17px;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.3s;
+        }
+
+        .back-btn:hover {
+          background: rgba(255, 255, 255, 0.15);
+        }
+      `}</style>
+
+      <div style={{
+        maxWidth: '680px',
+        width: '100%',
+        background: 'rgba(255, 255, 255, 0.03)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: '24px',
+        padding: '64px 48px',
+        animation: 'fadeInUp 0.6s ease-out'
+      }}>
+        {/* Progress */}
+        <div style={{ marginBottom: '48px' }}>
+          <div style={{
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            marginBottom: '16px'
+          }}>
+            <span style={{
+              fontSize: '13px',
+              color: 'rgba(255, 255, 255, 0.4)',
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              fontWeight: '500'
+            }}>
+              Étape {currentStepIndex + 1} sur {steps.length}
+            </span>
+          </div>
+          <div style={{
+            height: '2px',
+            background: 'rgba(255, 255, 255, 0.1)',
+            borderRadius: '2px',
+            overflow: 'hidden'
+          }}>
+            <div style={{
+              height: '100%',
+              background: '#f5f5f7',
+              width: `${((currentStepIndex + 1) / steps.length) * 100}%`,
+              transition: 'width 0.5s cubic-bezier(0.4, 0, 0.2, 1)',
+              borderRadius: '2px'
+            }} />
+          </div>
+        </div>
+
+        {/* Description Step */}
+        {currentStep === 'description' && (
+          <div>
+            <h2 style={{
+              fontSize: '40px',
+              fontWeight: '700',
+              marginBottom: '16px',
+              letterSpacing: '-0.02em',
+              lineHeight: '1.1'
+            }}>
+              Parlez-nous de votre situation
+            </h2>
+            <p style={{
+              fontSize: '19px',
+              color: 'rgba(255, 255, 255, 0.6)',
+              marginBottom: '40px',
+              lineHeight: '1.5'
+            }}>
+              Qu'est-ce qui vous amène à demander un second avis ?
+            </p>
+
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+              placeholder="Décrivez brièvement votre situation médicale..."
+              className="input-field"
+              style={{ marginBottom: '24px' }}
+            />
+
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '16px',
+              margin: '32px 0',
+              opacity: 0.4
+            }}>
+              <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.2)' }} />
+              <span style={{ fontSize: '15px', color: 'rgba(255, 255, 255, 0.5)' }}>ou</span>
+              <div style={{ flex: 1, height: '1px', background: 'rgba(255, 255, 255, 0.2)' }} />
+            </div>
+
+            <button
+              onClick={isRecording ? stopRecording : startRecording}
+              className={`mic-button ${isRecording ? 'recording' : ''}`}
+            >
+              <div style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '50%',
+                background: isRecording ? '#ff3b30' : 'rgba(255, 255, 255, 0.8)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center'
+              }}>
+                {isRecording ? '⏹' : '🎤'}
+              </div>
+              {isRecording ? 'Arrêter l\'enregistrement' : 'Enregistrer un message vocal'}
+            </button>
+
+            {isRecording && (
+              <div style={{
+                marginTop: '24px',
+                padding: '24px',
+                background: 'rgba(255, 59, 48, 0.1)',
+                borderRadius: '16px',
+                border: '1px solid rgba(255, 59, 48, 0.2)'
+              }}>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '12px',
+                  marginBottom: '16px'
+                }}>
+                  <div style={{
+                    width: '8px',
+                    height: '8px',
+                    borderRadius: '50%',
+                    background: '#ff3b30',
+                    animation: 'pulse 1.5s ease-in-out infinite'
+                  }} />
+                  <span style={{ fontSize: '15px', color: 'rgba(255, 255, 255, 0.8)' }}>
+                    Enregistrement en cours...
+                  </span>
+                </div>
+                <div style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '2px',
+                  height: '60px',
+                  background: 'rgba(0, 0, 0, 0.3)',
+                  borderRadius: '8px',
+                  padding: '0 12px'
+                }}>
+                  {Array.from({ length: 50 }).map((_, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        flex: 1,
+                        background: 'rgba(255, 59, 48, 0.8)',
+                        borderRadius: '2px',
+                        transition: 'height 0.1s',
+                        height: `${Math.max(4, (Math.sin((i + audioLevel) * 0.2) * audioLevel) / 3)}px`
+                      }}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Name Step */}
+        {currentStep === 'name' && (
+          <div>
+            <h2 style={{
+              fontSize: '40px',
+              fontWeight: '700',
+              marginBottom: '16px',
+              letterSpacing: '-0.02em',
+              lineHeight: '1.1'
+            }}>
+              Votre nom
+            </h2>
+            <p style={{
+              fontSize: '19px',
+              color: 'rgba(255, 255, 255, 0.6)',
+              marginBottom: '40px',
+              lineHeight: '1.5'
+            }}>
+              Pour personnaliser notre accompagnement
+            </p>
+
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              placeholder="Jean Dupont"
+              className="input-field"
+            />
+          </div>
+        )}
+
+        {/* Phone Step */}
+        {currentStep === 'phone' && (
+          <div>
+            <h2 style={{
+              fontSize: '40px',
+              fontWeight: '700',
+              marginBottom: '16px',
+              letterSpacing: '-0.02em',
+              lineHeight: '1.1'
+            }}>
+              Téléphone
+            </h2>
+            <p style={{
+              fontSize: '19px',
+              color: 'rgba(255, 255, 255, 0.6)',
+              marginBottom: '40px',
+              lineHeight: '1.5'
+            }}>
+              Pour que notre assistante puisse vous joindre
+            </p>
+
+            <input
+              type="tel"
+              value={formData.phone}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              placeholder="+33 6 12 34 56 78"
+              className="input-field"
+            />
+          </div>
+        )}
+
+        {/* Email Step */}
+        {currentStep === 'email' && (
+          <div>
+            <h2 style={{
+              fontSize: '40px',
+              fontWeight: '700',
+              marginBottom: '16px',
+              letterSpacing: '-0.02em',
+              lineHeight: '1.1'
+            }}>
+              Email
+            </h2>
+            <p style={{
+              fontSize: '19px',
+              color: 'rgba(255, 255, 255, 0.6)',
+              marginBottom: '40px',
+              lineHeight: '1.5'
+            }}>
+              Pour recevoir votre rapport et confirmation
+            </p>
+
+            <input
+              type="email"
+              value={formData.email}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              placeholder="jean.dupont@email.com"
+              className="input-field"
+            />
+          </div>
+        )}
+
+        {/* Reassurance */}
+        <div style={{
+          marginTop: '40px',
+          padding: '20px',
+          background: 'rgba(52, 199, 89, 0.08)',
+          border: '1px solid rgba(52, 199, 89, 0.2)',
+          borderRadius: '16px',
+          fontSize: '15px',
+          color: 'rgba(255, 255, 255, 0.7)',
+          lineHeight: '1.6'
+        }}>
+          <div style={{ marginBottom: '6px' }}>✓ Contact gratuit sans engagement</div>
+          <div style={{ marginBottom: '6px' }}>✓ Informations protégées et confidentielles</div>
+          <div>✓ Traité par des professionnels de santé</div>
+        </div>
+
+        {/* Navigation */}
+        <div style={{
+          display: 'flex',
+          gap: '16px',
+          marginTop: '40px'
+        }}>
+          {currentStepIndex > 0 && (
+            <button
+              onClick={() => setCurrentStep(steps[currentStepIndex - 1])}
+              className="back-btn"
+            >
+              Retour
+            </button>
+          )}
+          <button
+            onClick={handleNext}
+            disabled={!canProceed()}
+            className="continue-btn"
+            style={{ flex: 1 }}
+          >
+            Continuer
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
