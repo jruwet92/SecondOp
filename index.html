@@ -514,6 +514,16 @@
           <div class="rec-label"><div class="rec-dot"></div><span>Enregistrement en cours…</span></div>
           <div class="rec-bars" id="recBars"><!-- bars injected by JS --></div>
         </div>
+
+        <!-- Recorded confirmation -->
+        <div id="recDone" style="display:none; margin-top:24px; padding:18px 20px; background:rgba(52,199,89,0.1); border:1px solid rgba(52,199,89,0.25); border-radius:16px; align-items:center; gap:14px;">
+          <span style="font-size:22px;">✓</span>
+          <div style="flex:1;">
+            <div style="font-size:15px; color:rgba(255,255,255,0.9); margin-bottom:4px;">Message vocal enregistré</div>
+            <div style="font-size:13px; color:rgba(255,255,255,0.45);">Cliquez pour écouter</div>
+          </div>
+          <button id="playBtn" onclick="playRecording()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:50%; width:40px; height:40px; color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">▶</button>
+        </div>
       </div>
 
       <!-- Step: name -->
@@ -743,43 +753,51 @@
   }
 
   // ── Submit to Make.com webhook ───────────────
-  window.submitForm = function() {
+  // Convert a Blob to a base64 string
+  function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload  = () => resolve(reader.result.split(',')[1]); // strip "data:…;base64,"
+      reader.onerror = reject;
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  window.submitForm = async function() {
     const btn = document.getElementById('submitBtn');
     btn.classList.add('loading');
     btn.disabled = true;
     document.getElementById('submitLabel').textContent = 'Envoi…';
 
-    var payload = JSON.stringify({
-      name:        document.getElementById('inputName').value,
-      phone:       document.getElementById('inputPhone').value,
-      email:       document.getElementById('inputEmail').value,
-      description: document.getElementById('inputDescription').value || '(message vocal enregistré)',
-      hasVoiceRecording: recordedBlob !== null,
-      submittedAt: new Date().toISOString()
-    });
+    try {
+      // If there's a recording, convert it to base64 so it can travel in JSON
+      let audioBase64 = null;
+      if (recordedBlob) {
+        audioBase64 = await blobToBase64(recordedBlob);
+      }
 
-    // Fire-and-forget via fetch — Make.com webhooks don't return CORS headers
-    // so awaiting the response will always throw a network error in the browser.
-    // The webhook still receives and processes the payload regardless.
-    fetch('https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: payload
-    }).catch(function() { /* expected — CORS block on response, data already sent */ });
-
-    // Also send via navigator.sendBeacon as a backup — this guarantees delivery
-    // even if the page navigates away, and it bypasses CORS entirely.
-    if (navigator.sendBeacon) {
-      navigator.sendBeacon(
-        'https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x',
-        new Blob([payload], { type: 'application/json' })
-      );
-    }
-
-    // Show success after a brief moment so the spinner is visible
-    setTimeout(function() {
+      await fetch('https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x', {
+        method: 'POST',
+        mode: 'no-cors',
+        body: JSON.stringify({
+          name:              document.getElementById('inputName').value,
+          phone:             document.getElementById('inputPhone').value,
+          email:             document.getElementById('inputEmail').value,
+          description:       document.getElementById('inputDescription').value || '(message vocal enregistré)',
+          hasVoiceRecording: recordedBlob !== null,
+          audioBase64:       audioBase64,
+          submittedAt:       new Date().toISOString()
+        })
+      });
       showPage('page-success');
-    }, 1200);
+    } catch (err) {
+      console.error(err);
+      alert('Erreur réseau. Vérifiez votre connexion et réessayez.');
+    } finally {
+      btn.classList.remove('loading');
+      btn.disabled = false;
+      document.getElementById('submitLabel').textContent = 'Envoyer ma demande';
+    }
   };
 
   // ── Voice recording ──────────────────────────
@@ -840,10 +858,24 @@
 
     isRecording = false;
     document.getElementById('micBtn').classList.remove('recording');
-    document.getElementById('micLabel').textContent = 'Enregistrer un message vocal';
-    // keep visualiser visible so user sees "recorded"
-    document.querySelectorAll('.rec-bar').forEach(b => b.style.height = '4px');
+    document.getElementById('micLabel').textContent = 'Reenregistrer';
+    document.getElementById('recWrapper').classList.remove('visible');
+    // Show "recorded" block (recordedBlob is set by mediaRecorder.onstop)
+    document.getElementById('recDone').style.display = 'flex';
   }
+
+  // Play back the recorded audio
+  window.playRecording = function() {
+    if (!recordedBlob) return;
+    const url = URL.createObjectURL(recordedBlob);
+    const audio = new Audio(url);
+    audio.onended = () => URL.revokeObjectURL(url);
+    audio.play();
+    // toggle play/pause icon
+    const btn = document.getElementById('playBtn');
+    btn.textContent = '⏸';
+    audio.onended = () => { btn.textContent = '▶'; URL.revokeObjectURL(url); };
+  };
 
 })();
 </script>
