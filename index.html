@@ -768,7 +768,7 @@
 
       await fetch('https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x', {
         method: 'POST',
-        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           name:              document.getElementById('inputName').value,
           phone:             document.getElementById('inputPhone').value,
