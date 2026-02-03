@@ -683,10 +683,10 @@
     updateContinueBtn();
   }
 
-  function updateContinueBtn() {
+  window.updateContinueBtn = function() {
     const btn = document.getElementById('continueBtn');
     btn.disabled = !canProceed();
-  }
+  };
 
   function canProceed() {
     switch (STEPS[currentStepIdx]) {
@@ -705,13 +705,6 @@
     el.addEventListener('keyup',  updateContinueBtn);
     el.addEventListener('change', updateContinueBtn);
   });
-
-  // When recorder finishes, re-check the continue button
-  if (window.Recorder) {
-    window.Recorder.onStateChange = function(state) {
-      if (state === 'done') updateContinueBtn();
-    };
-  }
 
   window.goToStep = function(stepName) {
     if (stepName === 'description') { showPage('page-form'); showStep(0); return; }
@@ -797,6 +790,18 @@
     }
   };
 
+
+  // recorder.js loads after this inline script, so wire onStateChange once it's ready
+  document.addEventListener('DOMContentLoaded', function() {
+    // tiny delay to let recorder.js execute
+    setTimeout(function() {
+      if (window.Recorder) {
+        window.Recorder.onStateChange = function(state) {
+          if (state === 'done') updateContinueBtn();
+        };
+      }
+    }, 0);
+  });
 
 })();
 </script>
