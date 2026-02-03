@@ -309,7 +309,7 @@
   }
   .rec-bar {
     flex: 1; background: rgba(255,59,48,0.8);
-    border-radius: 2px; transition: height 0.1s;
+    border-radius: 2px;
     height: 4px;
   }
 
@@ -506,13 +506,13 @@
         <p class="step-sub">Qu'est-ce qui vous amène à demander un second avis ?</p>
         <textarea class="input-field" id="inputDescription" placeholder="Décrivez brièvement votre situation médicale…"></textarea>
         <div class="or-divider"><div class="line"></div><span>ou</span><div class="line"></div></div>
-        <button class="mic-button" id="micBtn" onclick="toggleRecording()">
+        <button class="mic-button" id="micBtn" onclick="Recorder.toggle()">
           <span class="mic-icon">🎤</span>
           <span id="micLabel">Enregistrer un message vocal</span>
         </button>
         <div class="rec-wrapper" id="recWrapper">
           <div class="rec-label"><div class="rec-dot"></div><span>Enregistrement en cours…</span></div>
-          <div class="rec-bars" id="recBars"><!-- bars injected by JS --></div>
+          <div class="rec-bars" id="recBars"><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div><div class="rec-bar"></div></div>
         </div>
 
         <!-- Recorded confirmation -->
@@ -522,7 +522,7 @@
             <div style="font-size:15px; color:rgba(255,255,255,0.9); margin-bottom:4px;">Message vocal enregistré</div>
             <div style="font-size:13px; color:rgba(255,255,255,0.45);">Cliquez pour écouter</div>
           </div>
-          <button id="playBtn" onclick="playRecording()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:50%; width:40px; height:40px; color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">▶</button>
+          <button id="playBtn" onclick="Recorder.play()" style="background:rgba(255,255,255,0.1); border:1px solid rgba(255,255,255,0.2); border-radius:50%; width:40px; height:40px; color:#fff; font-size:18px; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:background 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.18)'" onmouseout="this.style.background='rgba(255,255,255,0.1)'">▶</button>
         </div>
       </div>
 
@@ -618,13 +618,7 @@
   const STEPS = ['description', 'name', 'phone', 'email'];
   let currentStepIdx = 0;
 
-  // Recording refs
-  let mediaRecorder = null;
-  let audioContext   = null;
-  let analyser      = null;
-  let animFrame     = null;
-  let isRecording   = false;
-  let recordedBlob  = null;
+  // Recording is now handled by recorder.js (window.Recorder)
 
   // ── Nav-bar scroll effect ────────────────────
   window.addEventListener('scroll', () => {
@@ -665,11 +659,6 @@
   window.changeSlide = function(dir) { goToSlide(Math.max(0, Math.min(carouselData.length-1, slideIdx + dir))); };
   document.getElementById('arrowLeft').disabled = true; // initial
 
-  // ── Mic recording bars (50 bars) ─────────────
-  (function buildBars() {
-    const container = document.getElementById('recBars');
-    for (let i = 0; i < 50; i++) container.innerHTML += '<div class="rec-bar"></div>';
-  })();
 
   // ── Page routing ─────────────────────────────
   function showPage(id) {
@@ -701,7 +690,7 @@
 
   function canProceed() {
     switch (STEPS[currentStepIdx]) {
-      case 'description': return document.getElementById('inputDescription').value.trim().length > 0 || recordedBlob !== null;
+      case 'description': return document.getElementById('inputDescription').value.trim().length > 0 || (window.Recorder && window.Recorder.getBlob() !== null);
       case 'name':        return document.getElementById('inputName').value.trim().length > 0;
       case 'phone':       return document.getElementById('inputPhone').value.trim().length > 0;
       case 'email':       return document.getElementById('inputEmail').value.includes('@');
@@ -716,6 +705,13 @@
     el.addEventListener('keyup',  updateContinueBtn);
     el.addEventListener('change', updateContinueBtn);
   });
+
+  // When recorder finishes, re-check the continue button
+  if (window.Recorder) {
+    window.Recorder.onStateChange = function(state) {
+      if (state === 'done') updateContinueBtn();
+    };
+  }
 
   window.goToStep = function(stepName) {
     if (stepName === 'description') { showPage('page-form'); showStep(0); return; }
@@ -772,8 +768,9 @@
     try {
       // If there's a recording, convert it to base64 so it can travel in JSON
       let audioBase64 = null;
-      if (recordedBlob) {
-        audioBase64 = await blobToBase64(recordedBlob);
+      const recBlob = window.Recorder ? window.Recorder.getBlob() : null;
+      if (recBlob) {
+        audioBase64 = await blobToBase64(recBlob);
       }
 
       await fetch('https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x', {
@@ -784,7 +781,7 @@
           phone:             document.getElementById('inputPhone').value,
           email:             document.getElementById('inputEmail').value,
           description:       document.getElementById('inputDescription').value || '(message vocal enregistré)',
-          hasVoiceRecording: recordedBlob !== null,
+          hasVoiceRecording: recBlob !== null,
           audioBase64:       audioBase64,
           submittedAt:       new Date().toISOString()
         })
@@ -800,110 +797,12 @@
     }
   };
 
-  // ── Voice recording ──────────────────────────
-  // chunks lives here so both ondataavailable and onstop can see it
-  let chunks = [];
-
-  window.toggleRecording = async function() {
-    if (isRecording) { stopRecording(); return; }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-      // Pick the best supported format
-      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-        ? 'audio/webm;codecs=opus'
-        : MediaRecorder.isTypeSupported('audio/webm')
-          ? 'audio/webm'
-          : 'audio/ogg;codecs=opus';
-
-      mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
-
-      audioContext = new AudioContext();
-      const source = audioContext.createMediaStreamSource(stream);
-      analyser = audioContext.createAnalyser();
-      analyser.fftSize = 256;
-      source.connect(analyser);
-
-      const dataArray = new Uint8Array(analyser.frequencyBinCount);
-      const bars = document.querySelectorAll('.rec-bar');
-
-      function draw() {
-        analyser.getByteFrequencyData(dataArray);
-        const avg = dataArray.reduce((a,b) => a+b, 0) / dataArray.length;
-        const level = Math.min(100, (avg / 128) * 100);
-        bars.forEach((bar, i) => {
-          bar.style.height = Math.max(4, (Math.sin((i + level) * 0.2) * level) / 3) + 'px';
-        });
-        animFrame = requestAnimationFrame(draw);
-      }
-      draw();
-
-      chunks = []; // reset before each new recording
-      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
-      mediaRecorder.onstop = () => {
-        recordedBlob = new Blob(chunks, { type: mimeType });
-        console.log('Recording done. Blob size:', recordedBlob.size, 'type:', recordedBlob.type);
-        updateContinueBtn();
-      };
-
-      mediaRecorder.start(100); // 100ms timeslice — chunks collect every 100ms
-      isRecording = true;
-
-      // UI
-      document.getElementById('micBtn').classList.add('recording');
-      document.getElementById('micLabel').textContent = 'Arrêter l\'enregistrement';
-      document.getElementById('recWrapper').classList.add('visible');
-    } catch (err) {
-      console.error(err);
-      alert('Impossible d\'accéder au microphone. Veuillez vérifier vos paramètres.');
-    }
-  };
-
-  function stopRecording() {
-    if (mediaRecorder) {
-      mediaRecorder.stop();
-      mediaRecorder.stream.getTracks().forEach(t => t.stop());
-    }
-    if (animFrame) cancelAnimationFrame(animFrame);
-    if (audioContext) audioContext.close();
-
-    isRecording = false;
-    document.getElementById('micBtn').classList.remove('recording');
-    document.getElementById('micLabel').textContent = 'Reenregistrer';
-    document.getElementById('recWrapper').classList.remove('visible');
-    // Show "recorded" block (recordedBlob is set by mediaRecorder.onstop)
-    document.getElementById('recDone').style.display = 'flex';
-  }
-
-  // Play back the recorded audio
-  let currentAudio = null;
-  window.playRecording = function() {
-    if (!recordedBlob || recordedBlob.size === 0) {
-      alert('Aucun enregistrement trouvé.');
-      return;
-    }
-    const btn = document.getElementById('playBtn');
-
-    // If already playing, pause it
-    if (currentAudio && !currentAudio.paused) {
-      currentAudio.pause();
-      btn.textContent = '▶';
-      return;
-    }
-
-    const url = URL.createObjectURL(recordedBlob);
-    currentAudio = new Audio(url);
-    currentAudio.play();
-    btn.textContent = '⏸';
-    currentAudio.onended = () => {
-      btn.textContent = '▶';
-      URL.revokeObjectURL(url);
-      currentAudio = null;
-    };
-  };
 
 })();
 </script>
+<!-- RecordRTC from cdnjs — battle-tested cross-browser audio recording -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/RecordRTC/5.6.2/RecordRTC.js"></script>
+<!-- Our recorder module — must come after RecordRTC -->
+<script src="recorder.js"></script>
 </body>
 </html>
