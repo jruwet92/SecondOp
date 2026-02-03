@@ -547,7 +547,7 @@
       <!-- Nav buttons -->
       <div class="form-nav">
         <button class="back-btn" id="backBtn" onclick="stepBack()" style="display:none">Retour</button>
-        <button class="continue-btn" id="continueBtn" onclick="stepNext()">Continuer</button>
+        <button class="continue-btn" id="continueBtn" disabled onclick="stepNext()">Continuer</button>
       </div>
     </div>
   </div>
@@ -691,7 +691,7 @@
 
   function canProceed() {
     switch (STEPS[currentStepIdx]) {
-      case 'description': return document.getElementById('inputDescription').value.trim().length > 10 || recordedBlob !== null;
+      case 'description': return document.getElementById('inputDescription').value.trim().length > 0 || recordedBlob !== null;
       case 'name':        return document.getElementById('inputName').value.trim().length > 0;
       case 'phone':       return document.getElementById('inputPhone').value.trim().length > 0;
       case 'email':       return document.getElementById('inputEmail').value.includes('@');
@@ -699,9 +699,12 @@
     }
   }
 
-  // live validation on input
+  // live validation — input + keyup + change so it fires reliably everywhere
   ['inputDescription','inputName','inputPhone','inputEmail'].forEach(id => {
-    document.getElementById(id).addEventListener('input', updateContinueBtn);
+    const el = document.getElementById(id);
+    el.addEventListener('input',  updateContinueBtn);
+    el.addEventListener('keyup',  updateContinueBtn);
+    el.addEventListener('change', updateContinueBtn);
   });
 
   window.goToStep = function(stepName) {
