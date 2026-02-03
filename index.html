@@ -801,12 +801,23 @@
   };
 
   // ── Voice recording ──────────────────────────
+  // chunks lives here so both ondataavailable and onstop can see it
+  let chunks = [];
+
   window.toggleRecording = async function() {
     if (isRecording) { stopRecording(); return; }
 
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      mediaRecorder = new MediaRecorder(stream);
+
+      // Pick the best supported format
+      const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus'
+        : MediaRecorder.isTypeSupported('audio/webm')
+          ? 'audio/webm'
+          : 'audio/ogg;codecs=opus';
+
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mimeType });
 
       audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
@@ -828,14 +839,15 @@
       }
       draw();
 
-      let chunks = [];
-      mediaRecorder.ondataavailable = e => chunks.push(e.data);
+      chunks = []; // reset before each new recording
+      mediaRecorder.ondataavailable = e => { if (e.data.size > 0) chunks.push(e.data); };
       mediaRecorder.onstop = () => {
-        recordedBlob = new Blob(chunks, { type: 'audio/webm' });
+        recordedBlob = new Blob(chunks, { type: mimeType });
+        console.log('Recording done. Blob size:', recordedBlob.size, 'type:', recordedBlob.type);
         updateContinueBtn();
       };
 
-      mediaRecorder.start();
+      mediaRecorder.start(100); // 100ms timeslice — chunks collect every 100ms
       isRecording = true;
 
       // UI
@@ -865,16 +877,30 @@
   }
 
   // Play back the recorded audio
+  let currentAudio = null;
   window.playRecording = function() {
-    if (!recordedBlob) return;
-    const url = URL.createObjectURL(recordedBlob);
-    const audio = new Audio(url);
-    audio.onended = () => URL.revokeObjectURL(url);
-    audio.play();
-    // toggle play/pause icon
+    if (!recordedBlob || recordedBlob.size === 0) {
+      alert('Aucun enregistrement trouvé.');
+      return;
+    }
     const btn = document.getElementById('playBtn');
+
+    // If already playing, pause it
+    if (currentAudio && !currentAudio.paused) {
+      currentAudio.pause();
+      btn.textContent = '▶';
+      return;
+    }
+
+    const url = URL.createObjectURL(recordedBlob);
+    currentAudio = new Audio(url);
+    currentAudio.play();
     btn.textContent = '⏸';
-    audio.onended = () => { btn.textContent = '▶'; URL.revokeObjectURL(url); };
+    currentAudio.onended = () => {
+      btn.textContent = '▶';
+      URL.revokeObjectURL(url);
+      currentAudio = null;
+    };
   };
 
 })();
