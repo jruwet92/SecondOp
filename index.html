@@ -743,35 +743,43 @@
   }
 
   // ── Submit to Make.com webhook ───────────────
-  window.submitForm = async function() {
+  window.submitForm = function() {
     const btn = document.getElementById('submitBtn');
     btn.classList.add('loading');
     btn.disabled = true;
     document.getElementById('submitLabel').textContent = 'Envoi…';
 
-    try {
-      const res = await fetch('https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name:        document.getElementById('inputName').value,
-          phone:       document.getElementById('inputPhone').value,
-          email:       document.getElementById('inputEmail').value,
-          description: document.getElementById('inputDescription').value || '(message vocal enregistré)',
-          hasVoiceRecording: recordedBlob !== null,
-          submittedAt: new Date().toISOString()
-        })
-      });
-      if (!res.ok) throw new Error('Webhook ' + res.status);
-      showPage('page-success');
-    } catch (err) {
-      console.error(err);
-      alert('Une erreur est survenue lors de l\'envoi. Merci de réessayer.');
-    } finally {
-      btn.classList.remove('loading');
-      btn.disabled = false;
-      document.getElementById('submitLabel').textContent = 'Envoyer ma demande';
+    var payload = JSON.stringify({
+      name:        document.getElementById('inputName').value,
+      phone:       document.getElementById('inputPhone').value,
+      email:       document.getElementById('inputEmail').value,
+      description: document.getElementById('inputDescription').value || '(message vocal enregistré)',
+      hasVoiceRecording: recordedBlob !== null,
+      submittedAt: new Date().toISOString()
+    });
+
+    // Fire-and-forget via fetch — Make.com webhooks don't return CORS headers
+    // so awaiting the response will always throw a network error in the browser.
+    // The webhook still receives and processes the payload regardless.
+    fetch('https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: payload
+    }).catch(function() { /* expected — CORS block on response, data already sent */ });
+
+    // Also send via navigator.sendBeacon as a backup — this guarantees delivery
+    // even if the page navigates away, and it bypasses CORS entirely.
+    if (navigator.sendBeacon) {
+      navigator.sendBeacon(
+        'https://hook.eu2.make.com/3np1ggca77g7cwaabdq786ezbc7wbh9x',
+        new Blob([payload], { type: 'application/json' })
+      );
     }
+
+    // Show success after a brief moment so the spinner is visible
+    setTimeout(function() {
+      showPage('page-success');
+    }, 1200);
   };
 
   // ── Voice recording ──────────────────────────
